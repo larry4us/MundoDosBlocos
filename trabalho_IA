@@ -1,131 +1,53 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% A means-ends planner to be used with
-% action_goal_uninstantiated_constraints_brakto_chp17.pl
-%
-% Coder: Edjard Mota
-% Date   : 22/04/2021
-% Source:  Prolog Programming for AI, Ivan Bratko,
-%          4th edition
-%          Chapter 17 - Representing actions
-%                       for planning
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Define um bloco com tamanho (largura e altura) e posição (X, Y)
+block(a, 2, 2).  % bloco a com largura 2 e altura 2
+block(b, 1, 1).  % bloco b com largura 1 e altura 1
+block(c, 1, 2).  % bloco c com largura 1 e altura 2
 
-%----------------------------------------------------------
-%   Figure  17.8 (3rd) or 17.6 (4th) Edition
-%   A planner based on goal regression.
-%   This planner searches in iterative-deepening style.
+% Define lugares na mesa com largura e altura
+place(1, 4, 4).  % lugar 1 com largura 4 e altura 4
+place(2, 4, 4).  % lugar 2 com largura 4 e altura 4
+place(3, 4, 4).  % lugar 3 com largura 4 e altura 4
+place(4, 4, 4).  % lugar 4 com largura 4 e altura 4
 
+% Define as condições para mover um bloco de uma posição para outra
+can(move(Block, FromX, FromY, ToX, ToY), 
+    [clear(Block), clear_space(ToX, ToY), 
+     on(Block, FromX, FromY), 
+     vacancia(Block, FromX, FromY, ToX, ToY), 
+     estabilidade(Block, FromX, FromY, ToX, ToY)]) :-
+    block(Block, Width, Height),
+    place(_, PlaceWidth, PlaceHeight),
+    ToX >= 0, ToY >= 0,
+    ToX + Width =< PlaceWidth,
+    ToY + Height =< PlaceHeight.
 
-%   A means-ends planner with goal regression
-%   plan( State, Goals, Plan)
-plan( State, Goals, []):-
-  satisfied( State, Goals).                   % Goals true in State
+% Condições de vacância (espaço livre para empilhar)
+vacancia(Block, FromX, FromY, ToX, ToY) :-
+    block(Block, Width, Height),
+    clear_space(ToX, ToY),
+    clear_space(ToX + Width - 1, ToY),
+    clear_space(ToX, ToY + Height - 1),
+    clear_space(ToX + Width - 1, ToY + Height - 1).
 
-plan( State, Goals, Plan):-
-  append( PrePlan, [Action], Plan),           % Divide plan achieving breadth-first effect
-  select( State, Goals, Goal),                % Select a goal
-  achieves( Action, Goal),
-  can( Action, Condition),                    % Ensure Action contains no variables
-  preserves( Action, Goals),                  % Protect Goals
-  regress( Goals, Action, RegressedGoals),    % Regress Goals through Action
-  plan( State, RegressedGoals, PrePlan).
+% Condições de estabilidade (verifica centro de massa e suporte)
+estabilidade(Block, FromX, FromY, ToX, ToY) :-
+    block(Block, Width, Height),
+    centro_de_massa(ToX, ToY, Width, Height, Cx, Cy),
+    supports(FromX, FromY, Cx, Cy).
 
-%satisfied( State, Goals)  :-
-%  delete_all( Goals, State, []).              % All Goals in State
-% --------------------------------------------
-% Suggestion from  page 400, 4th edition
-satisfied(State,[Goal | Goals]):-
-    holds(Goal),
-    satisfied(Goals).
+centro_de_massa(X, Y, Width, Height, Cx, Cy) :-
+    Cx is X + Width / 2,
+    Cy is Y + Height / 2.
 
-holds(different(X,Y)):-
-    \+ X = Y, !.
-holds(different(X,Y)):-
-    X == Y,
-    false.
+supports(FromX, FromY, Cx, Cy) :-
+    block(Block, Width, Height),
+    FromX =< Cx, Cx =< FromX + Width,
+    FromY =< Cy, Cy =< FromY + Height.
 
-% --------------------------------------------
-select( State, Goals, Goal)  :-               % Select Goal from Goals
-  member( Goal, Goals).                       % A simple selection principle
+% Define os efeitos de mover um bloco
+adds(move(Block, FromX, FromY, ToX, ToY), [on(Block, ToX, ToY), clear_space(FromX, FromY)]).
+deletes(move(Block, FromX, FromY, ToX, ToY), [on(Block, FromX, FromY), clear_space(ToX, ToY)]).
 
-% --------------------------------------------
-achieves( Action, Goal)  :-
-  adds( Action, Goals),
-  member( Goal, Goals).
-
-% --------------------------------------------
-preserves( Action, Goals)  :-                 % Action does not destroy Goals
-  deletes( Action, Relations),
-  \+  (member( Goal, Relations),              % not member
-       member( Goal, Goals) ).
-
-% --------------------------------------------
-regress( Goals, Action, RegressedGoals)  :-       % Regress Goals through Action
-  adds( Action, NewRelations),
-  delete_all( Goals, NewRelations, RestGoals),
-  can( Action, Condition),
-  addnew( Condition, RestGoals, RegressedGoals).  % Add precond., check imposs.
-
-% --------------------------------------------
-% addnew( NewGoals, OldGoals, AllGoals):
-%   OldGoals is the union of NewGoals and OldGoals
-%   NewGoals and OldGoals must be compatible
-addnew( [], L, L).
-
-addnew( [Goal | _], Goals, _)  :-
-  impossible( Goal, Goals),         % Goal incompatible with Goals
-  !,
-  fail.                             % Cannot be added
-
-addnew( [X | L1], L2, L3)  :-
-  member( X, L2),  !,               % Ignore duplicate
-  addnew( L1, L2, L3).
-
-addnew( [X | L1], L2, [X | L3])  :-
-  addnew( L1, L2, L3).
-
-% --------------------------------------------
-% delete_all( L1, L2, Diff): Diff is set-difference of lists L1 and L2
-delete_all( [], _, []).
-
-delete_all( [X | L1], L2, Diff)  :-
-  member( X, L2), !,
-  delete_all( L1, L2, Diff).
-
-delete_all( [X | L1], L2, [X | Diff])  :-
-  delete_all( L1, L2, Diff).
-
-% --------------------------------------------
-member(X,[X|_]).
-member(X,[_|T]):-
-     member(X,T).
-
-delete(X,[X|Tail],Tail).
-delete(X,[Y|Tail],[Y|Tail1]):-
-   delete(X, Tail,Tail1).
-
-% ---------------
-% Defini��o de "poder", "adicionar" e "deletar".
-
-can(move(Block, From, To), [clear(block), clear(to), on(Block,From)]) :-
-  block(Block),
-  object(To),
-  To \== Block,
-  object(From),
-  From \== To,
-  Block \== From.
-
-adds(move(X, From, To), [on(X, To), clear(From)]).
-deletes(move(X, From, To), [on(X, From), clear(To)]).
-object(X) :-
-  place(X)
-  ;
-  block(X).
-block(a).
-block(b).
-block(c).
-place(1).
-place(2).
-place(3).
-palce(4).
+% Define um estado inicial do mundo dos blocos
+state([clear_space(2, 2), clear_space(4, 4), clear_space(3, 3), 
+       on(a, 1, 1), on(b, 3, 3), on(c, 5, 5)]).
